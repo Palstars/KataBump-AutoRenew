@@ -248,34 +248,60 @@ async function waitTurnstile(page, sec = 10) {
             await page.getByRole('textbox', { name: 'Password' }).fill(user.password);
             await page.waitForTimeout(500);
 
-                                    // Turnstile (登录) - xdotool优先, CDP回退
+                                                // Turnstile 策略: 先不碰(可能是invisible模式), 失败再xdotool+CDP
             console.log('  >> 登录页 Turnstile...');
             let tsOk = false;
-            for (let attempt = 0; attempt < 5; attempt++) {
-                let clicked = false;
-                // xdotool 优先 (物理鼠标事件，更难被检测)
-                for (let i = 0; i < 8; i++) {
-                    if (await xdotoolClick(page)) { clicked = true; break; }
-                    await page.waitForTimeout(1500);
-                }
-                // CDP 回退
-                if (!clicked) {
-                    console.log('  >> xdotool 未命中，尝试 CDP...');
+
+            // 阶段1: 直接登录 (Turnstile invisible模式可能自动通过)
+            console.log('  >> 阶段1: 直接登录尝试...');
+            await page.getByRole('button', { name: 'Login', exact: true }).click();
+            await page.waitForTimeout(5000);
+            
+            if (!page.url().includes('error=captcha') && !page.url().includes('login')) {
+                console.log('  ✅ 直接登录成功! (Turnstile invisible模式)');
+                tsOk = true;
+            }
+            
+            // 阶段2: 如果被拦截, 用 xdotool + CDP 重试
+            if (!tsOk) {
+                console.log('  >> 阶段2: Turnstile 需要交互，刷新后 xdotool+CDP...');
+                for (let attempt = 0; attempt < 3; attempt++) {
+                    await page.reload();
+                    await page.waitForTimeout(3000);
+                    try {
+                        await page.getByRole('textbox', { name: 'Email' }).fill(user.username);
+                        await page.getByRole('textbox', { name: 'Password' }).fill(user.password);
+                    } catch (e) {}
+                    await page.waitForTimeout(2000);
+                    
+                    // xdotool
+                    let clicked = false;
                     for (let i = 0; i < 8; i++) {
-                        if (await cdpClick(page)) { clicked = true; break; }
+                        if (await xdotoolClick(page)) { clicked = true; break; }
                         await page.waitForTimeout(1500);
                     }
+                    // CDP 回退
+                    if (!clicked) {
+                        for (let i = 0; i < 5; i++) {
+                            if (await cdpClick(page)) { clicked = true; break; }
+                            await page.waitForTimeout(1500);
+                        }
+                    }
+                    
+                    if (clicked) {
+                        await page.waitForTimeout(3000);
+                        await page.getByRole('button', { name: 'Login', exact: true }).click();
+                        await page.waitForTimeout(5000);
+                    }
+                    
+                    if (!page.url().includes('error=captcha') && !page.url().includes('login')) {
+                        console.log('  ✅ Turnstile 交互后登录成功!');
+                        tsOk = true; break;
+                    }
+                    console.log('  >> 第 ' + (attempt+1) + '/3 次交互重试失败');
                 }
-                if (clicked && await waitTurnstile(page, 15)) { tsOk = true; break; }
-                console.log('  >> Turnstile 第 ' + (attempt+1) + '/5 次失败，刷新...');
-                await page.reload();
-                await page.waitForTimeout(3000);
-                try {
-                    await page.getByRole('textbox', { name: 'Email' }).fill(user.username);
-                    await page.getByRole('textbox', { name: 'Password' }).fill(user.password);
-                } catch (e) {}
             }
-            if (!tsOk) console.log('  ⚠️ Turnstile 未确认成功');
+            if (!tsOk) console.log('  ⚠️ Turnstile 未能通过');
 
             // 点击登录
             await page.getByRole('button', { name: 'Login', exact: true }).click();
