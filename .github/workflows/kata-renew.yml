@@ -3,7 +3,6 @@ name: 🔄 KataBump Auto Renew
 on:
   workflow_dispatch:
   schedule:
-    # 每天 UTC 02:30 (北京时间 10:30)
     - cron: "30 2 * * *"
 
 permissions:
@@ -22,51 +21,52 @@ jobs:
       - name: 📥 检出仓库
         uses: actions/checkout@v4
 
-      - name: 🐍 设置 Python 3.11
-        uses: actions/setup-python@v5
+      - name: 🟢 设置 Node.js 20
+        uses: actions/setup-node@v4
         with:
-          python-version: "3.11"
+          node-version: '20'
 
       - name: 📦 安装系统依赖
         run: |
           sudo apt-get update
-          sudo apt-get install -y xvfb fonts-noto-cjk
+          sudo apt-get install -y xvfb google-chrome-stable fonts-noto-cjk
 
-      - name: 📚 安装 Python 依赖
-        run: pip install playwright
-
-      - name: 🌐 安装 Playwright 浏览器
-        run: python -m playwright install chromium
+      - name: 📚 安装 Node.js 依赖
+        run: npm install
 
       - name: 📡 安装 Hysteria2
         run: |
           if [ -n "${{ secrets.HY2_PROXY_URL }}" ]; then
-            echo "安装 Hysteria2..."
             curl -L -o hysteria \
               https://github.com/apernet/hysteria/releases/latest/download/hysteria-linux-amd64
             chmod +x hysteria
-            sudo mv hysteria /usr/local/bin/hysteria
+            sudo mv hysteria /usr/local/bin/
             hysteria version
-            echo "✅ Hysteria2 安装完成"
-          else
-            echo "⚠️ 直连模式"
+          fi
+
+      - name: 🔌 启动 Hysteria2
+        run: |
+          if [ -n "${{ secrets.HY2_PROXY_URL }}" ]; then
+            nohup hysteria client \
+              -c /dev/stdin << EOF &
+          server: ${{ secrets.HY2_PROXY_URL }}
+          socks5:
+            listen: "127.0.0.1:${{ secrets.SOCKS_PORT || '51080' }}"
+          EOF
+            sleep 3
+            echo "✅ Hysteria2 已启动"
           fi
 
       - name: ⏳ 随机延迟
-        run: |
-          delay=$((RANDOM % 120))
-          echo "随机延迟: ${delay}秒"
-          sleep $delay
+        run: sleep $((RANDOM % 120))
 
       - name: 🚀 执行续期
         env:
           USERS_JSON: ${{ secrets.USERS_JSON }}
           HTTP_PROXY: ${{ secrets.HTTP_PROXY }}
-          HY2_PROXY_URL: ${{ secrets.HY2_PROXY_URL }}
-          SOCKS_PORT: ${{ secrets.SOCKS_PORT || '51080' }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
-        run: xvfb-run --auto-servernum --server-args="-screen 0 1280x720x24" python3 kata_renew.py
+        run: xvfb-run --auto-servernum --server-args="-screen 0 1280x720x24" node action_renew.js
 
       - name: 📸 上传截图
         if: always()
@@ -84,10 +84,8 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           echo "$(date +'%Y-%m-%d %H:%M:%S')" > time.txt
           git add time.txt 2>/dev/null || true
-          if git diff --cached --quiet; then
-            echo "无变化"
-          else
+          git diff --cached --quiet || {
             git commit -m "⏱️ $(date +'%Y-%m-%d %H:%M:%S')"
             git pull --rebase origin main
             git push origin HEAD:main
-          fi
+          }
