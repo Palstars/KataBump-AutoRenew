@@ -1,5 +1,6 @@
-node_modules/
+__pycache__/
+*.pyc
 screenshots/
-ChromeData_Katabump/
+node_modules/
 login.json
 *.png
