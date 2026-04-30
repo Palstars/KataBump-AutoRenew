@@ -178,7 +178,16 @@ async function xdotoolClick(page) {
             await page.waitForTimeout(100 + Math.floor(Math.random() * 200));
             
             // 2. 缓慢移动到目标位置
-            execSync('xdotool mousemove --step 5 --delay 10 ' + cx + ' ' + cy);
+            // 分步移动 (更人类化)
+                    const steps = 5;
+                    const prevX = startX, prevY = startY;
+                    for (let s = 1; s <= steps; s++) {
+                        const t = s / steps;
+                        const ix = Math.round(prevX + (cx - prevX) * t);
+                        const iy = Math.round(prevY + (cy - prevY) * t);
+                        execSync('xdotool mousemove ' + ix + ' ' + iy);
+                        await page.waitForTimeout(10 + Math.floor(Math.random() * 30));
+                    }
             await page.waitForTimeout(50 + Math.floor(Math.random() * 150));
             
             // 3. 点击 (按住一小段时间再松开)
